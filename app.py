@@ -1,174 +1,153 @@
-import os
-import json
-import requests
-from flask import Flask, request, jsonify, render_template
+# import os
+# import json
+# import time
+# import re
+# from flask import Flask, render_template, request, Response, stream_with_context
+# from flask_cors import CORS
+# from dotenv import load_dotenv
+
+# # CrewAI Imports
+# from crewai import Task, Crew, Process
+
+# # Custom Agent Imports
+# from agents.scout import get_scout_agent
+# from agents.roaster import get_roaster_agent
+
+# load_dotenv()
+
+# app = Flask(__name__)
+# CORS(app)
+
+# # Model Definition
+# llm = "gemini/gemini-2.5-flash"
+
+# @app.route('/')
+# def landing():
+#     return render_template('landing.html')
+
+# @app.route('/analyze_page')
+# def analyze_page():
+#     return render_template('analyze.html')
+
+# @app.route('/stream_analyze')
+# def stream_analyze():
+#     repo_url = request.args.get('repo_url')
+    
+#     def generate():
+#         # --- STEP 1: INIT ---
+#         yield f"data: {json.dumps({'status': '[1/4] 🚀 Initializing CrewAI Agents...'})}\n\n"
+#         time.sleep(0.5)
+
+#         try:
+#             # Instantiate Agents
+#             scout = get_scout_agent(llm)
+#             roaster = get_roaster_agent(llm)
+
+#             # --- STEP 2: SCOUT ---
+#             yield f"data: {json.dumps({'status': '[2/4] 🕵️ Agent [Scout]: Reading repo files...'})}\n\n"
+
+#             task_extract = Task(
+#                 description=f"Analyze the repository at {repo_url}. Get the file structure, languages, and read key code files.",
+#                 expected_output="A detailed technical summary.",
+#                 agent=scout
+#             )
+
+#             task_review = Task(
+#                 description="Based on the Scout's summary, create a final review. Output strictly Valid JSON.",
+#                 expected_output='''JSON with keys: "verdict" (Ship It/Skip It), "roast" (list), "good_things" (list), "suggestions" (list).''',
+#                 agent=roaster,
+#                 context=[task_extract]
+#             )
+
+#             # --- STEP 3: ROASTER & KICKOFF ---
+#             yield f"data: {json.dumps({'status': '[3/4] 🔥 Agent [Roaster]: Analyzing code & generating verdict...'})}\n\n"
+            
+#             crew = Crew(
+#                 agents=[scout, roaster],
+#                 tasks=[task_extract, task_review],
+#                 process=Process.sequential,
+#                 verbose=True
+#             )
+
+#             # KICKOFF (This takes time)
+#             result = crew.kickoff()
+            
+#             # --- STEP 4: PARSING ---
+#             yield f"data: {json.dumps({'status': '[4/4] ⚙️ Finalizing: Parsing Output...'})}\n\n"
+            
+#             # --- ROBUST PARSING LOGIC ---
+#             # Handle different CrewAI result types
+#             if hasattr(result, 'raw'):
+#                 raw_output = result.raw
+#             else:
+#                 raw_output = str(result)
+
+#             # DEBUG LOG: Print to VS Code Terminal so we can see what happened
+#             print(f"\n\n============= DEBUG: RAW AGENT OUTPUT =============\n{raw_output}\n===================================================\n\n")
+
+#             # 1. Clean Markdown Code Blocks
+#             # Removes ```json and ``` to get pure text
+#             clean_text = re.sub(r"```json", "", raw_output, flags=re.IGNORECASE)
+#             clean_text = re.sub(r"```", "", clean_text)
+            
+#             # 2. Extract JSON Object using substring search
+#             # Finds the first '{' and last '}'
+#             start_index = clean_text.find('{')
+#             end_index = clean_text.rfind('}') + 1
+
+#             if start_index != -1 and end_index != -1:
+#                 json_str = clean_text[start_index:end_index]
+#             else:
+#                 raise ValueError("Could not find { } brackets in the output.")
+
+#             # 3. Parse
+#             final_data = json.loads(json_str)
+            
+#             yield f"data: {json.dumps({'status': '✅ Analysis Complete!', 'final_data': final_data})}\n\n"
+            
+#         except Exception as e:
+#             print(f"ERROR IN STREAM: {str(e)}") # Print error to terminal
+#             yield f"data: {json.dumps({'error': f'Server Error: {str(e)}'})}\n\n"
+
+#     return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+# if __name__ == '__main__':
+#     app.run(debug=True, port=5000)
+
+
+
+from flask import Flask, render_template, request, Response, stream_with_context
 from flask_cors import CORS
-import google.generativeai as genai
 from dotenv import load_dotenv
+
+# Import ONLY the Orchestrator
+from agents.orchestrator import OrchestratorAgent
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-
-# Headers for GitHub API
-headers = {"Accept": "application/vnd.github.v3+json"}
-if GITHUB_TOKEN:
-    headers["Authorization"] = f"token {GITHUB_TOKEN}"
-
-def get_github_data(repo_url):
-    """Fetches metadata, file structure, and key code snippets."""
-    try:
-        if not repo_url.startswith("https://github.com/"):
-            return None, "Invalid URL. Must start with https://github.com/"
-        
-        clean_url = repo_url.split("?")[0].rstrip("/")
-        parts = clean_url.split("/")
-        if len(parts) < 5:
-            return None, "Invalid URL format."
-            
-        owner, repo = parts[-2], parts[-1]
-    except Exception:
-        return None, "Could not parse URL."
-
-    base_url = f"https://api.github.com/repos/{owner}/{repo}"
-    
-    # 1. Basic Metadata
-    resp = requests.get(base_url, headers=headers)
-    if resp.status_code == 404:
-        return None, "Repo not found or Private. Public repos only."
-    elif resp.status_code == 403:
-        return None, "API Rate limit exceeded."
-    elif resp.status_code != 200:
-        return None, f"GitHub API Error: {resp.status_code}"
-
-    data = resp.json()
-    if data.get("private") is True:
-        return None, "Private repositories are not supported."
-
-    # 2. Languages
-    lang_resp = requests.get(f"{base_url}/languages", headers=headers)
-    languages = lang_resp.json() if lang_resp.status_code == 200 else {}
-
-    # 3. README
-    readme_content = ""
-    readme_resp = requests.get(f"{base_url}/readme", headers=headers)
-    if readme_resp.status_code == 200:
-        download_url = readme_resp.json().get("download_url")
-        if download_url:
-            readme_content = requests.get(download_url).text[:6000] # Increased limit
-
-    # 4. File Structure (Tree) & Key Code Snippets
-    # We fetch the git tree to see folder structure
-    tree_url = f"{base_url}/git/trees/{data['default_branch']}?recursive=1"
-    tree_resp = requests.get(tree_url, headers=headers)
-    
-    file_structure = []
-    code_snippets = ""
-    
-    if tree_resp.status_code == 200:
-        tree_data = tree_resp.json().get("tree", [])
-        # Limit to top 30 files to avoid overwhelming the prompt
-        file_structure = [item['path'] for item in tree_data[:30]]
-        
-        # Smart File Fetching: Look for interesting code files
-        interesting_files = [f for f in tree_data if f['path'].endswith(('.py', '.js', '.ts', '.jsx', '.tsx', 'go', 'rs', 'java'))]
-        
-        # Take up to 2 code files to analyze coding style
-        for file_obj in interesting_files[:2]:
-            # Get raw content
-            raw_resp = requests.get(f"https://raw.githubusercontent.com/{owner}/{repo}/{data['default_branch']}/{file_obj['path']}")
-            if raw_resp.status_code == 200:
-                code_snippets += f"\n--- FILE: {file_obj['path']} ---\n{raw_resp.text[:1000]}\n"
-
-    return {
-        "name": data.get("name"),
-        "description": data.get("description", "No description."),
-        "stars": data.get("stargazers_count"),
-        "forks": data.get("forks_count"),
-        "open_issues": data.get("open_issues_count"),
-        "languages": languages,
-        "readme": readme_content,
-        "structure": file_structure, # Pass this to AI
-        "code_snippets": code_snippets # Pass this to AI
-    }, None
-
-def analyze_with_gemini(repo_data):
-    """Sends data to Gemini Flash for the roast/review."""
-    
-    # Heuristics for the prompt context
-    has_readme = bool(repo_data['readme'])
-    top_lang = max(repo_data['languages'], key=repo_data['languages'].get) if repo_data['languages'] else "Unknown"
-    
-    system_prompt = f"""
-    You are a Senior Staff Engineer. You are strictly honest, slightly cynical, but deep down you want the junior dev to succeed.
-    
-    Analyze this GitHub project:
-    - Name: {repo_data['name']}
-    - Description: {repo_data['description']}
-    - Primary Languages: {repo_data['languages']}
-    - File Structure (First 30 files): {repo_data['structure']}
-    - README Snippet: {repo_data['readme'][:2000]}...
-    - CODE SNIPPETS (Style Check): {repo_data['code_snippets']}
-    
-    Your Task:
-    1. README: If missing, roast them.
-    2. ARCHITECTURE: Look at the file structure. Is it messy? Are they putting everything in root?
-    3. CODE QUALITY: Look at the 'CODE SNIPPETS'. Are they using comments? Weird variable names?
-    4. VERDICT: Be fair.
-    
-    Output strictly valid JSON
-    {{
-        "roast": ["string", "string"],
-        "good_things": ["string", "string"],
-        "issues": ["string", "string"],
-        "suggestions": ["string", "string"],
-        "verdict": "Ship It" | "Almost There" | "Skip It"
-    }}
-    """
-
-    model = genai.GenerativeModel('gemini-2.5-flash') # Using 1.5 Flash as standard, replace with 2.5 if available
-    response = model.generate_content(system_prompt, generation_config={"response_mime_type": "application/json"})
-    
-    try:
-        return json.loads(response.text)
-    except Exception as e:
-        return {
-            "verdict": "Skip It", 
-            "roast": ["The code broke my JSON parser. That's how bad it is."],
-            "good_things": [], 
-            "issues": ["AI Generation Failed"], 
-            "suggestions": ["Try again."]
-        }
-
 @app.route('/')
-def index():
-    return render_template('index.html')
+def landing():
+    return render_template('landing.html')
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    data = request.json
-    repo_url = data.get('repo_url')
+@app.route('/analyze_page')
+def analyze_page():
+    return render_template('analyze.html')
+
+@app.route('/stream_analyze')
+def stream_analyze():
+    repo_url = request.args.get('repo_url')
     
-    if not repo_url:
-        return jsonify({"error": "URL is required"}), 400
-
-    # Step 1: Fetch Data
-    repo_data, error = get_github_data(repo_url)
-    if error:
-        return jsonify({"error": error}), 404
-
-    # Step 2: AI Analysis
-    analysis = analyze_with_gemini(repo_data)
+    # Instantiate the Orchestrator
+    orchestrator = OrchestratorAgent()
     
-    return jsonify({
-        "repo_data": repo_data,
-        "analysis": analysis
-    })
+    # Stream the generator
+    return Response(
+        stream_with_context(orchestrator.work(repo_url)), 
+        mimetype='text/event-stream'
+    )
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
