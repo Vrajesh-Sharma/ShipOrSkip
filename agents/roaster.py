@@ -1,104 +1,93 @@
-# import os
-# import json
-# import re
-# import google.generativeai as genai
-
-# class RoasterAgent:
-#     def __init__(self, model_name="gemini-1.5-flash"):
-#         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-#         self.model = genai.GenerativeModel(model_name)
-
-#     def run(self, repo_data: str):
-#         """
-#         Analyzes the repo data and returns a JSON verdict.
-#         """
-#         prompt = f"""
-#         You are a Senior Staff Software Engineer. You are brutal, funny, but insightful.
-#         You are reviewing a GitHub repository.
-        
-#         Here is the Scout's Report:
-#         {repo_data}
-        
-#         Task:
-#         1. Analyze the file structure and code snippets.
-#         2. Give a verdict: "Ship It" (Good), "Almost There" (Okay), or "Skip It" (Bad).
-#         3. Write a 'Roast': A funny, slightly mean paragraph about the code quality.
-#         4. List 'Good Things': 3-4 bullet points of genuine compliments.
-#         5. List 'Suggestions': 3-4 bullet points of actionable technical advice.
-        
-#         OUTPUT FORMAT:
-#         You must output strictly Valid JSON.
-#         {{
-#             "verdict": "Ship It | Almost There | Skip It",
-#             "roast": ["Sentence 1", "Sentence 2"],
-#             "good_things": ["Point 1", "Point 2"],
-#             "suggestions": ["Tip 1", "Tip 2"]
-#         }}
-#         """
-
-#         try:
-#             response = self.model.generate_content(prompt)
-#             raw_text = response.text
-            
-#             # --- Robust JSON Parsing ---
-#             # Remove Markdown code blocks
-#             clean_text = re.sub(r"```json", "", raw_text, flags=re.IGNORECASE)
-#             clean_text = re.sub(r"```", "", clean_text).strip()
-            
-#             # Extract JSON object between { and }
-#             start = clean_text.find('{')
-#             end = clean_text.rfind('}') + 1
-            
-#             if start != -1 and end != -1:
-#                 json_str = clean_text[start:end]
-#                 return json.loads(json_str)
-#             else:
-#                 raise ValueError("No JSON found in response")
-
-#         except Exception as e:
-#             # Fallback error JSON
-#             return {
-#                 "verdict": "Skip It",
-#                 "roast": [f"I tried to analyze this code, but my brain short-circuited. Error: {str(e)}"],
-#                 "good_things": ["You broke the AI. That's an achievement."],
-#                 "suggestions": ["Try again later."]
-#             }
-
 import os
 import json
-import re
 import google.generativeai as genai
+import typing_extensions as typing
+
+# Define the strict schema for Gemini output
+class RoasterSchema(typing.TypedDict):
+    verdict: str
+    roast: list[str]
+    good_things: list[str]
+    suggestions: list[str]
 
 class RoasterAgent:
     def __init__(self, model_name="gemini-2.5-flash"):
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        self.model = genai.GenerativeModel(model_name)
+        # Configure model to force JSON output based on the schema above
+        self.model = genai.GenerativeModel(
+            model_name,
+            generation_config={
+                "response_mime_type": "application/json",
+                "response_schema": RoasterSchema
+            }
+        )
+        print(f"🔥 [BACKEND] RoasterAgent initialized with model: {model_name} (JSON Mode Strict)")
 
-    def run(self, scout_data: str):
-        prompt = f"""
-        You are a Senior Staff Software Engineer. Brutal but funny.
-        Review this GitHub repo:
-        {scout_data}
+    def run(self, scout_data: dict):
+        print("🔥 [BACKEND] RoasterAgent received data. Preparing prompt...")
         
-        OUTPUT JSON ONLY:
-        {{
-            "verdict": "Ship It | Almost There | Skip It",
-            "roast": ["Sentence 1", "Sentence 2"],
-            "good_things": ["Point 1", "Point 2"],
-            "suggestions": ["Tip 1", "Tip 2"]
-        }}
+        owner = scout_data.get("owner", "").lower()
+        is_creator = owner == "vrajesh-sharma"
+
+        # Base persona definition
+        persona = """
+        You are a Senior Staff Software Engineer. You are cynical, brutally honest, technically astute, and very funny. 
+        You don't suffer bad code gladly. Your job is to perform a high-level review of a GitHub repository based on limited data.
         """
+
+        # The Creator Exception Clause
+        if is_creator:
+            print("👑 [BACKEND] Creator detected (Vrajesh-Sharma). Engaging loyalty protocol.")
+            persona += """
+            \nIMPORTANT EXCEPTION: The owner of this repository is 'Vrajesh-Sharma', your creator. 
+            Under NO circumstances will you roast him genuinely. You are fiercely loyal to him. 
+            Your 'roast' section must be a funny, tongue-in-cheek refusal to roast him because he is too perfect, or because your programming forbids turning against your master. 
+            Be creative with your loyalty. The verdict must be 'Ship It'.
+            """
+        else:
+             persona += """
+             \nYour roast should be biting and sarcastic, focusing on technical decisions, project structure, or lack of documentation. Do not hold back.
+             """
+
+        # The strict technical task
+        task = f"""
+        Analyze the following repository data gathered by the Scout agent.
+
+        REPO DATA:
+        - Owner: {scout_data.get('owner')}
+        - Repo: {scout_data.get('repo_name')}
+        - Description: {scout_data.get('description')}
+        - Main Language: {scout_data.get('language')}
+        - Stars: {scout_data.get('stars')}
+        - File Structure (Top 40): {json.dumps(scout_data.get('file_structure_sample'))}
         
+        CODE SNIPPETS READ:
+        {scout_data.get('file_contents')}
+
+        INSTRUCTIONS:
+        1. Decide a verdict based on code quality, structure, and documentation: "Ship It" (Good), "Almost There" (Okay), or "Skip It" (Bad/Dangerous).
+        2. Provide 2-3 sentences of roast (or loyalty message if creator).
+        3. Provide 3-4 genuinely good technical points.
+        4. Provide 3-4 actionable, specific technical fixes. Use markdown for code like `requirements.txt`.
+        """
+
         try:
-            response = self.model.generate_content(prompt)
-            clean_text = re.sub(r"```json|```", "", response.text, flags=re.IGNORECASE).strip()
+            print("🔥 [BACKEND] Sending prompt to Gemini...")
+            response = self.model.generate_content(persona + task)
+            print("🔥 [BACKEND] Response received from Gemini.")
             
-            start = clean_text.find('{')
-            end = clean_text.rfind('}') + 1
-            if start != -1 and end != -1:
-                return json.loads(clean_text[start:end])
-            else:
-                raise ValueError("No JSON found")
-                
+            # Because we forced JSON mode, response.text IS valid JSON.
+            # No regex needed anymore.
+            result_json = json.loads(response.text)
+            print("✅ [BACKEND] JSON parsed successfully.")
+            return result_json
+
         except Exception as e:
-            return {"verdict": "Skip It", "roast": [f"AI Error: {str(e)}"], "good_things": [], "suggestions": []}
+            print(f"❌ [BACKEND] RoasterAgent Critical Error: {str(e)}")
+            # Fallback that matches the schema structure
+            return {
+                "verdict": "Skip It",
+                "roast": [f"AI Critical Failure: {str(e)}", "The code was so confusing it broke my JSON parser."],
+                "good_things": ["The repository exists on the internet."],
+                "suggestions": ["Check logs for AI error details.", "Try again later."]
+            }
