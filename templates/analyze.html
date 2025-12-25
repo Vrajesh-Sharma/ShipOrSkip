@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Analysis</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
     <style>
@@ -23,7 +24,7 @@
         
         <div class="flex items-center justify-between">
             <a href="/" class="text-gray-500 hover:text-white text-sm transition">← Back to Home</a>
-            <h1 class="text-xl font-bold text-gray-700">ShipIt Or SkipIt</h1>
+            <a href="/"><h1 class="text-xl font-bold text-gray-700 hover:text-white transition">ShipIt Or SkipIt</h1></a>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[320px]">
@@ -43,7 +44,9 @@
                 <div class="bg-black border border-gray-800 rounded-xl p-4 overflow-y-auto font-mono text-sm shadow-inner relative flex-grow" id="terminalBox">
                     <div class="sticky top-0 bg-black/90 pb-2 border-b border-gray-900 mb-2 text-gray-500 text-xs flex justify-between">
                         <span>/usr/bin/orchestrator_status</span>
-                        <span class="text-teal-900">● LIVE</span>
+                        <div id="verdictPlaceholder" class="animate-pulse">
+                            <span class="text-teal-900">● LIVE</span>
+                        </div>
                     </div>
                     <div id="logs" class="space-y-2"></div>
                 </div>
