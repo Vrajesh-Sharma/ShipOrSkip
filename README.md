@@ -6,8 +6,9 @@
 
 **ShipIt or SkipIt** is an AI-powered code review tool. It infiltrates public GitHub repositories, analyzes file structures, reads code snippets, and delivers a harsh but constructive verdict: **Ship It**, **Almost There**, or **Skip It**.
 
-![Screenshot](static\LandingPage.png)
-![Screenshot](static\AnalyzePage.png)
+![Screenshot](static/LandingPage.png)
+
+![Screenshot](static/AnalyzePage.png)
 
 ---
 
