@@ -54,7 +54,7 @@
 
             <div id="verdictCard" class="bg-gray-900/50 border border-gray-800 rounded-xl flex flex-col items-center justify-center p-8 h-full text-center shadow-2xl relative overflow-hidden transition-all duration-700">
                 
-                <div id="verdictPlaceholder" class="text-gray-600 animate-pulse">
+                <div id="verdictWaiting" class="text-gray-600 animate-pulse">
                     <h2 class="text-4xl font-black opacity-20">AWAITING<br>JUDGMENT</h2>
                 </div>
 
@@ -103,6 +103,9 @@
         
         <footer class="text-center text-gray-600 text-xs pt-8 pb-4">
             Made with ❤️ by Vrajesh Sharma
+            <br>
+            P.S. Yes, the creator's repo gets special treatment.
+            Seniority comes with perks 😄
         </footer>
 
     </div>
@@ -156,7 +159,7 @@
             // Reset Verdict
             const vCard = document.getElementById('verdictCard');
             vCard.className = "bg-gray-900/50 border border-gray-800 rounded-xl flex flex-col items-center justify-center p-8 h-full text-center shadow-2xl relative overflow-hidden transition-all duration-700";
-            document.getElementById('verdictPlaceholder').classList.remove('hidden');
+            document.getElementById('verdictWaiting').classList.remove('hidden');
             document.getElementById('verdictContent').classList.add('hidden');
 
             const eventSource = new EventSource(`/stream_analyze?repo_url=${encodeURIComponent(url)}`);
@@ -190,7 +193,7 @@
             const vSub = document.getElementById('verdictSubtext');
             const vCard = document.getElementById('verdictCard');
             
-            document.getElementById('verdictPlaceholder').classList.add('hidden');
+            document.getElementById('verdictWaiting').classList.add('hidden');
             document.getElementById('verdictContent').classList.remove('hidden');
             
             vText.innerText = data.verdict.toUpperCase();
